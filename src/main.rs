@@ -27,20 +27,15 @@ mod chapter_1 {
 }
 
 mod chapter_2 {
-    use std::{collections::HashMap, hash::Hash};
+    use std::{collections::HashMap, hash::Hash, marker};
     
-    #[cfg(not(feature = "nightly-features"))]
+    // #[cfg(not(feature = "nightly-features"))]
     pub fn main() {
         dbg!(fact(2), 2);
 
         let mut new_fact = HOF::new(fact);
 
-        dbg!(new_fact.call(2), 2);
-    }
-
-    #[cfg(feature = "nightly-features")]
-    pub fn main() {
-        let _new_fact = HOF::new(fact);
+        dbg!(new_fact.call_mut((2,)), 2);
     }
 
     fn fact(n: i32) -> i32 {
@@ -76,12 +71,12 @@ mod chapter_2 {
             }
         }
 
-        fn call(&mut self, args: U) -> V {
-            if let Some(value) = self.memory.get(&args) {
+        fn call_mut(&mut self, args: (U,)) -> V {
+            if let Some(value) = self.memory.get(&args.0) {
                 value.clone()
             } else {
-                let output = (self.func)(args.clone());
-                self.memory.insert(args, output.clone());
+                let output = (self.func)(args.0.clone());
+                self.memory.insert(args.0, output.clone());
                 output
             }
         }
@@ -89,52 +84,51 @@ mod chapter_2 {
 
 
     #[cfg(feature = "nightly-features")]
-    struct HOF<U, V, F>
+    struct HOF<T, O, F>
     where
-        F: Fn<U> + FnOnce<U, Output = V>,
-        U: Eq + Hash + Clone + std::marker::Tuple,
-        V: Clone,
+        T: marker::Tuple + Eq + Hash + Clone,
+        F: Fn<T> + FnOnce<T, Output = O>,
+        O: Clone
     {
         func: F,
-        memory: HashMap<U, V>,
+        memory: HashMap<T, O>,
     }
 
     #[cfg(feature = "nightly-features")]
-    impl<U, V, F> HOF<U, V, F>
+    impl<T, O, F> HOF<T, O, F>
     where
-        F: Fn<U> + FnOnce<U, Output = V>,
-        U: Eq + Hash + Clone + std::marker::Tuple,
-        V: Clone,
+        T: marker::Tuple + Eq + Hash + Clone,
+        F: Fn<T> + FnOnce<T, Output = O>,
+        O: Clone
     {
-        fn new(func: F) -> Self {
+        fn new(f: F) -> Self {
             Self {
-                func,
-                memory: HashMap::new(),
+                func: f,
+                memory: HashMap::new()
             }
         }
     }
 
     #[cfg(feature = "nightly-features")]
-    impl<U: Eq + Hash + Clone + std::marker::Tuple, V: Clone, F: Fn<U> + FnOnce<U, Output = V>>
-        FnMut<U> for HOF<U, V, F>
-    {
-        extern "rust-call" fn call_mut(&mut self, args: U) -> Self::Output {
-            if let Some(value) = self.memory.get(&args) {
-                value.clone()
-            } else {
-                let output = (self.func)(args.clone());
-                self.memory.insert(args, output).unwrap()
+    impl<T: marker::Tuple + Eq + Hash + Clone, O: Clone, F: Fn<T> + FnOnce<T, Output = O>> FnMut<T> for HOF<T, O, F> {
+        extern "rust-call" fn call_mut(&mut self, args: T) -> Self::Output {
+            match self.memory.get(&args) {
+                None => {
+                    let output = self.func.call_mut(args.clone());
+                    self.memory.insert(args, output.clone());
+                    output
+                },
+                Some(op) => op.clone()
             }
         }
     }
 
     #[cfg(feature = "nightly-features")]
-    impl<U: Eq + Hash + Clone + std::marker::Tuple, V: Clone, F: Fn<U> + FnOnce<U, Output = V>>
-        FnOnce<U> for HOF<U, V, F>
-    {
-        type Output = V;
-        extern "rust-call" fn call_once(self, args: U) -> Self::Output {
-            (self.func)(args)
+    impl<T: marker::Tuple + Eq + Hash + Clone, O: Clone, F: Fn<T> + FnOnce<T, Output = O>> FnOnce<T> for HOF<T, O, F> {
+        type Output = O;
+    
+        extern "rust-call" fn call_once(self, args: T) -> Self::Output {
+            self.func.call_once(args)
         }
     }
 }
